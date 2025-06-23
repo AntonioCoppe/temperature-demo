@@ -2,44 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Temperature Stripes Demo</title>
+  <title>EPICA Dome C Temperature Stripes</title>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      background: #222;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    #controls {
-      padding: 1rem;
-      background: #333;
-      text-align: center;
-    }
+    body { margin:0; height:100vh; display:flex; flex-direction:column;
+           background:#222; color:#fff; font-family:sans-serif; }
+    #controls { background:#333; padding:1rem; text-align:center; }
     #controls button {
-      margin: 0 .5rem;
-      padding: .5rem 1rem;
-      border: none;
-      background: #008c9e;
-      color: #fff;
-      cursor: pointer;
-      font-size: 1rem;
+      margin:0 .5rem; padding:.5rem 1rem; border:none;
+      background:#008c9e; color:#fff; cursor:pointer; font-size:1rem;
     }
-    #controls button.active {
-      background: #00b5d4;
-    }
-    #chart-container {
-      flex: 1;
-      padding: 1rem;
-    }
-    canvas { 
-      background: #444;
-      border-radius: 4px;
-      width: 100% !important;
-      height: 100% !important;
-    }
+    #controls button.active { background:#00b5d4; }
+    #chart-container { flex:1; margin: 12px; padding: 8px; box-sizing: border-box; }
+    canvas { background:#444; width:100% !important; height:100% !important;
+             border-radius:4px; display:block; }
   </style>
 </head>
 <body>
@@ -49,133 +24,207 @@
     <button id="btn-bars">Bars</button>
     <button id="btn-bars-scale">Bars + Scale</button>
   </div>
-  <div id="chart-container">
-    <canvas id="chart"></canvas>
-  </div>
+  <div id="chart-container"><canvas id="chart"></canvas></div>
 
-  <!-- Chart.js -->
+  <!-- 1) CSV parser & Chart.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
-    // 1) Synthetic placeholder data: years 1850–2024, simple warming trend
-    const years = Array.from({length: 2024 - 1850 + 1}, (_, i) => 1850 + i);
-    const anomalies = years.map(y =>
-      // ramp from -0.4 up to +1.2
-      ((y - 1850) / (2024 - 1850)) * 1.6 - 0.4
-    );
+  // 2) Load CSV, extract numeric Age & dT
+  function loadCSV(path) {
+    return new Promise(resolve => {
+      Papa.parse(path, {
+        header: true, download: true, dynamicTyping: true,
+        complete: ({ data }) => {
+          const pts = [];
+          data.forEach(r => {
+            if (r.Age != null && r.dT != null && r.Age <= 800000) {
+              pts.push({ x: r.Age, y: r.dT });
+            }
+          });
+          resolve(pts);
+        }
+      });
+    });
+  }
 
-    // 2) Diverging color map: blue for negative, white at 0, red for positive
-    const minNeg = Math.min(...anomalies);
-    const maxPos = Math.max(...anomalies);
-    function colorMap(val) {
-      if (val >= 0) {
-        const t = Math.min(val / maxPos, 1);
-        const r = 255, g = Math.round(255 * (1 - t)), b = Math.round(255 * (1 - t));
-        return `rgb(${r},${g},${b})`;
+  // 3) Diverging colour map
+  function makeColorMap(points) {
+    const vals = points.map(p => p.y);
+    const minN = Math.min(...vals), maxP = Math.max(...vals);
+    return vals.map(v => {
+      if (v >= 0) {
+        const t = v / maxP;
+        return `rgb(255,${255*(1-t)|0},${255*(1-t)|0})`;
       } else {
-        const t = Math.min(Math.abs(val / minNeg), 1);
-        const r = Math.round(255 * (1 - t)), g = Math.round(255 * (1 - t)), b = 255;
-        return `rgb(${r},${g},${b})`;
+        const t = Math.abs(v / minN);
+        return `rgb(${255*(1-t)|0},${255*(1-t)|0},255)`;
       }
-    }
-    const barColors = anomalies.map(colorMap);
+    });
+  }
 
-    // 3) Shared dataset skeleton
-    const data = {
-      labels: years,
+  document.addEventListener('DOMContentLoaded', async () => {
+    // 4) Fetch & prepare data points
+    const points = await loadCSV(
+      'EPICA_Dome_C_Ice_Core_800KYr_Temperature_Estimates_229_35.csv'
+    );
+    // reverse so oldest (800 000 BP) is left, newest (0 BP) is right
+    points.reverse();
+
+    // Save original points for bars modes
+    const originalPoints = points.map(p => ({...p}));
+
+    // For stripes/labelled: make each bar fill the chart vertically
+    function makeStripePoints(points) {
+      return points.map((p, i) => ({ x: p.x, y: 100, _origY: p.y }));
+    }
+
+    // For coloring: use original temperature value
+    function makeStripeColors(points) {
+      const vals = points.map(p => p._origY !== undefined ? p._origY : p.y);
+      const minN = Math.min(...vals), maxP = Math.max(...vals);
+      return vals.map(v => {
+        if (v >= 0) {
+          const t = v / maxP;
+          return `rgb(255,${255*(1-t)|0},${255*(1-t)|0})`;
+        } else {
+          const t = Math.abs(v / minN);
+          return `rgb(${255*(1-t)|0},${255*(1-t)|0},255)`;
+        }
+      });
+    }
+
+    // Calculate x step for full-width stripes
+    const xStep = points.length > 1 ? (points[1].x - points[0].x) : 1;
+    const xMin = points[0].x - xStep/2;
+    const xMax = points[points.length-1].x + xStep/2;
+
+    // 5) Shared Chart.js dataset (bar chart with explicit x,y)
+    const chartData = {
       datasets: [{
-        data: anomalies,
-        backgroundColor: barColors,
+        data: makeStripePoints(points),
+        backgroundColor: makeStripeColors(makeStripePoints(points)),
         borderWidth: 0,
+        barThickness: 1,
+        maxBarThickness: 2
       }]
     };
 
-    // 4) Four different option-sets
+    // 6) Four view-configs
     const configs = {
       stripes: {
-        plugins: {
-          title: { display: true, text: '' }
-        },
+        indexAxis: 'x',
         scales: {
-          x: { display: false, grid: { display: false }, categoryPercentage: 1, barPercentage: 1 },
-          y: { display: false, grid: { display: false } }
+          x: { type:'linear', display:false, reverse:true, categoryPercentage: 1.0, barPercentage: 1.0, min: xMin, max: xMax, offset: false },
+          y: { display:false, min: 0, max: 100 }
         },
-        elements: { bar: { borderRadius: 0 } },
-        maintainAspectRatio: false
+        plugins: { title:{display:false}, legend: { display: false } },
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: 0 },
       },
       labelled: {
-        plugins: {
-          title: { display: true, text: 'Global temperature change (1850–2024)' }
-        },
+        indexAxis: 'x',
         scales: {
           x: {
-            display: true,
-            grid: { display: false },
-            ticks: {
-              autoSkip: true,
-              maxTicksLimit: 10,
-              color: '#fff'
-            },
-            categoryPercentage: 1,
-            barPercentage: 1
+            type:'linear', reverse:true,
+            display:true, grid:{display:false},
+            categoryPercentage: 1.0, barPercentage: 1.0,
+            min: xMin, max: xMax, offset: false,
+            ticks:{
+              color:'#fff',
+              callback: v => `${Math.round(v/1000)} kyr`
+            }
           },
-          y: { display: false }
+          y: { display:false, min: 0, max: 100 }
         },
-        elements: { bar: { borderRadius: 0 } },
-        maintainAspectRatio: false
+        plugins: {
+          title:{
+            display:true,
+            text:'Global temperature anomalies (0 – 800 000 years BP)'
+          },
+          legend: { display: false }
+        },
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: 0 },
       },
       bars: {
-        plugins: {
-          title: { display: true, text: `Global temperatures have increased by ${(anomalies.slice(-1)[0] - anomalies[0]).toFixed(1)}°C` }
-        },
         scales: {
-          x: { display: false, grid: { display: false } },
-          y: { display: false }
+          x: { type:'linear', display:false, reverse:true, categoryPercentage: 1.0, barPercentage: 1.0 },
+          y: { display:false }
         },
-        elements: { bar: { borderRadius: 0 } },
+        plugins: { title:{ display:false } },
+        responsive: true,
         maintainAspectRatio: false
       },
       'bars-scale': {
-        plugins: {
-          title: { display: true, text: `Global temperatures have increased by ${(anomalies.slice(-1)[0] - anomalies[0]).toFixed(1)}°C` }
-        },
         scales: {
           x: {
-            display: true,
-            grid: { display: false },
-            ticks: { color: '#fff', autoSkip: true, maxTicksLimit: 10 }
+            type:'linear', reverse:true,
+            display:true, grid:{display:false},
+            categoryPercentage: 1.0, barPercentage: 1.0,
+            ticks:{
+              color:'#fff',
+              callback: v => `${Math.round(v/1000)} kyr`
+            }
           },
           y: {
-            display: true,
-            grid: { color: '#666' },
-            ticks: { color: '#fff' }
+            display:true,
+            grid:{color:'#666'},
+            ticks:{color:'#fff'}
           }
         },
-        elements: { bar: { borderRadius: 0 } },
+        plugins: { title:{ display:false } },
+        responsive: true,
         maintainAspectRatio: false
       }
     };
 
-    // 5) Initialize Chart.js
+    // 7) Render initial chart
     const ctx = document.getElementById('chart').getContext('2d');
-    let chart = new Chart(ctx, {
+    let chart;
+    function updateChart(mode) {
+      if (mode === 'stripes' || mode === 'labelled') {
+        chartData.datasets[0].data = makeStripePoints(points);
+        chartData.datasets[0].backgroundColor = makeStripeColors(makeStripePoints(points));
+        chartData.datasets[0].barThickness = Math.max(1, Math.floor(ctx.canvas.width / points.length));
+        chartData.datasets[0].maxBarThickness = Math.max(1, Math.floor(ctx.canvas.width / points.length));
+      } else {
+        chartData.datasets[0].data = originalPoints;
+        chartData.datasets[0].backgroundColor = makeColorMap(originalPoints);
+        chartData.datasets[0].barThickness = 2;
+        chartData.datasets[0].maxBarThickness = 4;
+      }
+      chart.options = configs[mode];
+      chart.update();
+    }
+    chart = new Chart(ctx, {
       type: 'bar',
-      data,
+      data: chartData,
       options: configs.stripes
     });
 
-    // 6) Button wiring
+    // 8) Button logic
     document.querySelectorAll('#controls button').forEach(btn => {
       btn.addEventListener('click', () => {
-        // toggle active class
-        document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#controls button')
+          .forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-
-        // update chart
-        const mode = btn.id.replace('btn-', '');
-        chart.options = configs[mode];
-        chart.update();
+        const mode = btn.id.replace('btn-','');
+        updateChart(mode);
       });
     });
+
+    // On resize, update bar thickness for stripes/labelled
+    window.addEventListener('resize', () => {
+      const active = document.querySelector('#controls button.active');
+      if (active) {
+        const mode = active.id.replace('btn-','');
+        updateChart(mode);
+      }
+    });
+  });
   </script>
 </body>
 </html>

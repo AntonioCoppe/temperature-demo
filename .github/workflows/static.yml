@@ -21,10 +21,7 @@ jobs:
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          # Point at your site root — everything except the workflow itself
-          path: |
-            **/*
-            !.github/**
+          path: .
 
   deploy:
     needs: build_and_upload
