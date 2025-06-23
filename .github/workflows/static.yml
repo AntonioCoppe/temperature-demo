@@ -19,7 +19,7 @@ jobs:
 
       # (No build step needed for pure HTML/JS demo)
       - name: Upload artifact for Pages
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v4
         with:
           # Point at your site root — everything except the workflow itself
           path: |
@@ -34,4 +34,4 @@ jobs:
       id-token: write
     steps:
       - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v1
+        uses: actions/deploy-pages@v4
