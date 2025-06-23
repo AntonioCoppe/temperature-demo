@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Temperature Stripes Demo</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      background: #222;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #controls {
+      padding: 1rem;
+      background: #333;
+      text-align: center;
+    }
+    #controls button {
+      margin: 0 .5rem;
+      padding: .5rem 1rem;
+      border: none;
+      background: #008c9e;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    #controls button.active {
+      background: #00b5d4;
+    }
+    #chart-container {
+      flex: 1;
+      padding: 1rem;
+    }
+    canvas { 
+      background: #444;
+      border-radius: 4px;
+      width: 100% !important;
+      height: 100% !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="btn-stripes" class="active">Warming Stripes</button>
+    <button id="btn-labelled">Labelled Stripes</button>
+    <button id="btn-bars">Bars</button>
+    <button id="btn-bars-scale">Bars + Scale</button>
+  </div>
+  <div id="chart-container">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // 1) Synthetic placeholder data: years 1850–2024, simple warming trend
+    const years = Array.from({length: 2024 - 1850 + 1}, (_, i) => 1850 + i);
+    const anomalies = years.map(y =>
+      // ramp from -0.4 up to +1.2
+      ((y - 1850) / (2024 - 1850)) * 1.6 - 0.4
+    );
+
+    // 2) Diverging color map: blue for negative, white at 0, red for positive
+    const minNeg = Math.min(...anomalies);
+    const maxPos = Math.max(...anomalies);
+    function colorMap(val) {
+      if (val >= 0) {
+        const t = Math.min(val / maxPos, 1);
+        const r = 255, g = Math.round(255 * (1 - t)), b = Math.round(255 * (1 - t));
+        return `rgb(${r},${g},${b})`;
+      } else {
+        const t = Math.min(Math.abs(val / minNeg), 1);
+        const r = Math.round(255 * (1 - t)), g = Math.round(255 * (1 - t)), b = 255;
+        return `rgb(${r},${g},${b})`;
+      }
+    }
+    const barColors = anomalies.map(colorMap);
+
+    // 3) Shared dataset skeleton
+    const data = {
+      labels: years,
+      datasets: [{
+        data: anomalies,
+        backgroundColor: barColors,
+        borderWidth: 0,
+      }]
+    };
+
+    // 4) Four different option-sets
+    const configs = {
+      stripes: {
+        plugins: {
+          title: { display: true, text: '' }
+        },
+        scales: {
+          x: { display: false, grid: { display: false }, categoryPercentage: 1, barPercentage: 1 },
+          y: { display: false, grid: { display: false } }
+        },
+        elements: { bar: { borderRadius: 0 } },
+        maintainAspectRatio: false
+      },
+      labelled: {
+        plugins: {
+          title: { display: true, text: 'Global temperature change (1850–2024)' }
+        },
+        scales: {
+          x: {
+            display: true,
+            grid: { display: false },
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: 10,
+              color: '#fff'
+            },
+            categoryPercentage: 1,
+            barPercentage: 1
+          },
+          y: { display: false }
+        },
+        elements: { bar: { borderRadius: 0 } },
+        maintainAspectRatio: false
+      },
+      bars: {
+        plugins: {
+          title: { display: true, text: `Global temperatures have increased by ${(anomalies.slice(-1)[0] - anomalies[0]).toFixed(1)}°C` }
+        },
+        scales: {
+          x: { display: false, grid: { display: false } },
+          y: { display: false }
+        },
+        elements: { bar: { borderRadius: 0 } },
+        maintainAspectRatio: false
+      },
+      'bars-scale': {
+        plugins: {
+          title: { display: true, text: `Global temperatures have increased by ${(anomalies.slice(-1)[0] - anomalies[0]).toFixed(1)}°C` }
+        },
+        scales: {
+          x: {
+            display: true,
+            grid: { display: false },
+            ticks: { color: '#fff', autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: {
+            display: true,
+            grid: { color: '#666' },
+            ticks: { color: '#fff' }
+          }
+        },
+        elements: { bar: { borderRadius: 0 } },
+        maintainAspectRatio: false
+      }
+    };
+
+    // 5) Initialize Chart.js
+    const ctx = document.getElementById('chart').getContext('2d');
+    let chart = new Chart(ctx, {
+      type: 'bar',
+      data,
+      options: configs.stripes
+    });
+
+    // 6) Button wiring
+    document.querySelectorAll('#controls button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // toggle active class
+        document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // update chart
+        const mode = btn.id.replace('btn-', '');
+        chart.options = configs[mode];
+        chart.update();
+      });
+    });
+  </script>
+</body>
+</html>
