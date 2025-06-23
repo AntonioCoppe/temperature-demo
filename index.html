@@ -130,9 +130,10 @@
             type:'linear', reverse:true,
             display:true, grid:{display:false},
             categoryPercentage: 1.0, barPercentage: 1.0,
-            min: xMin, max: xMax, offset: false,
+            offset: false,
             ticks:{
               color:'#fff',
+              stepSize: 200000,
               callback: v => `${Math.round(v/1000)} kyr`
             }
           },
