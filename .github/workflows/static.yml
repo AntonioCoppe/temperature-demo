@@ -19,7 +19,7 @@ jobs:
 
       # (No build step needed for pure HTML/JS demo)
       - name: Upload artifact for Pages
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v3
         with:
           # Point at your site root — everything except the workflow itself
           path: |
